@@ -1,0 +1,31 @@
+# Virtual env
+.venv/
+venv/
+env/
+
+# Agent/editor metadata (not part of the app)
+.commandcode/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+*.egg
+
+# MediaPipe downloaded model
+models/*.task
+models/*.task.part
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs / build artifacts
+*.log
+.install.done
+dist/
+build/
