@@ -103,13 +103,46 @@ def draw_reveal_flash(frame: np.ndarray, text: str, progress: float) -> None:
     cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
 
 
-def draw_hud(frame: np.ndarray, letter: str) -> None:
+def draw_hud(frame: np.ndarray, letter: str, locked: bool = False) -> None:
     h, w = frame.shape[:2]
     font = _font(config.LETTER["font"])
-    hint = "[SPACE] new   [R] reveal   [Q] quit"
+    if locked:
+        hint = "[SPACE] new   [R] reveal   [U] unlock   [Q] quit"
+    else:
+        hint = "[SPACE] new   [L] lock   [R] reveal   [Q] quit"
     (tw, th), _ = cv2.getTextSize(hint, font, 0.6, 2)
     pad = 12
     cv2.rectangle(frame, (10, h - th - pad * 3), (10 + tw + pad * 2, h - 10),
                   (0, 0, 0), -1)
     cv2.putText(frame, hint, (10 + pad, h - pad * 2), font, 0.6,
                 (220, 220, 220), 2, cv2.LINE_AA)
+
+
+def draw_lock_indicator(frame: np.ndarray, head_xy, t_ms: int) -> None:
+    """Pulsing green ring drawn under the locked target's head."""
+    if head_xy is None:
+        return
+    cx, cy = int(head_xy[0]), int(head_xy[1])
+    pulse = 0.5 + 0.5 * (1 + np.sin(t_ms * 0.006))
+    radius = int(28 + pulse * 8)
+    color_bgr = (60, 255, 120)
+    cv2.circle(frame, (cx, cy), radius, color_bgr, 4, cv2.LINE_AA)
+    cv2.circle(frame, (cx, cy), radius + 6, color_bgr, 2, cv2.LINE_AA)
+
+
+def draw_status_badge(frame: np.ndarray, text: str, color_bgr) -> None:
+    """Top-center badge, e.g. 'LOCKED' or 'TARGET LOST'."""
+    h, w = frame.shape[:2]
+    font = _font(config.LETTER["font"])
+    scale, thick = 0.8, 2
+    (tw, th), _ = cv2.getTextSize(text, font, scale, thick)
+    pad_x, pad_y = 18, 8
+    x = (w - tw) // 2 - pad_x
+    y = 20
+    cv2.rectangle(frame, (x, y), (x + tw + pad_x * 2, y + th + pad_y * 2),
+                  (0, 0, 0), -1)
+    cv2.rectangle(frame, (x, y), (x + tw + pad_x * 2, y + th + pad_y * 2),
+                  color_bgr, 2, cv2.LINE_AA)
+    cv2.putText(frame, text, (x + pad_x, y + th + pad_y - 2),
+                font, scale, color_bgr, thick, cv2.LINE_AA)
+

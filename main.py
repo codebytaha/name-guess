@@ -12,13 +12,17 @@ import cv2
 import numpy as np
 
 import config
-from detector import HeadDetector
+from detector import HeadDetector, pick_nearest
 from overlay import (
     draw_dimmed_background,
     draw_hud,
     draw_letter_with_glow,
+    draw_lock_indicator,
     draw_reveal_flash,
+    draw_status_badge,
 )
+
+LOST_TIMEOUT_MS = 800
 
 
 def _smooth(prev, new, factor: float):
@@ -58,6 +62,28 @@ def _fatal(win: str, msg: str) -> None:
     cv2.destroyAllWindows()
 
 
+def _pick_target(heads, display_pos, locked, locked_pos):
+    """Decide which face the letter should follow this frame.
+
+    Returns (detected_xy, lost_bool).
+    - If locked: pick the face nearest the locked reference point.
+    - If unlocked: pick the face nearest the current letter position
+      (so the letter sticks to whoever it's already on).
+    - If no faces: None.
+    """
+    if locked and locked_pos is not None:
+        target = pick_nearest(heads, locked_pos)
+        if target is None:
+            return locked_pos, True
+        return target, False
+
+    if not heads:
+        return None, False
+
+    ref = display_pos if display_pos is not None else heads[0]
+    return pick_nearest(heads, ref), False
+
+
 def main() -> int:
     win = config.WINDOW["name"]
     cv2.namedWindow(win, cv2.WINDOW_NORMAL)
@@ -95,6 +121,9 @@ def main() -> int:
         display_pos = None
         reveal_until_ms = None
         reveal_letter = letter
+        locked = False
+        locked_pos = None
+        lost_since_ms = None
 
         while True:
             ok, frame = cap.read()
@@ -104,11 +133,30 @@ def main() -> int:
             frame = cv2.flip(frame, 1)
 
             try:
-                detected = detector.detect(frame)
+                heads = detector.detect_all(frame)
             except Exception as e:
                 traceback.print_exc()
                 _fatal(win, f"Detector error:\n{e}")
                 break
+
+            detected, lost = _pick_target(
+                heads, display_pos, locked, locked_pos,
+            )
+
+            if locked:
+                if lost:
+                    if lost_since_ms is None:
+                        lost_since_ms = int(time.monotonic() * 1000)
+                    elif int(time.monotonic() * 1000) - lost_since_ms > LOST_TIMEOUT_MS:
+                        locked = False
+                        locked_pos = None
+                        lost_since_ms = None
+                else:
+                    lost_since_ms = None
+                    locked_pos = (
+                        locked_pos[0] * 0.6 + detected[0] * 0.4,
+                        locked_pos[1] * 0.6 + detected[1] * 0.4,
+                    )
 
             display_pos = _smooth(
                 display_pos, detected, float(config.LETTER["smoothing"])
@@ -122,6 +170,12 @@ def main() -> int:
                     letter,
                     (int(cx), int(cy - config.LETTER["offset_above_head_px"])),
                 )
+                if locked and not lost:
+                    draw_lock_indicator(
+                        frame,
+                        (int(cx), int(cy + 40)),
+                        int(time.monotonic() * 1000),
+                    )
 
             now_ms = int(time.monotonic() * 1000)
             if reveal_until_ms is not None:
@@ -132,7 +186,12 @@ def main() -> int:
                     progress = 1.0 - (remaining / 1000.0)
                     draw_reveal_flash(frame, reveal_letter, min(1.0, max(0.0, progress)))
 
-            draw_hud(frame, letter)
+            if locked and lost:
+                draw_status_badge(frame, "TARGET LOST", (60, 180, 255))
+            elif locked:
+                draw_status_badge(frame, "LOCKED", (60, 255, 120))
+
+            draw_hud(frame, letter, locked=locked)
             cv2.imshow(win, frame)
 
             key = cv2.waitKey(1) & 0xFF
@@ -145,6 +204,15 @@ def main() -> int:
             elif key in (ord("r"), ord("R")):
                 reveal_letter = letter
                 reveal_until_ms = now_ms + 1000
+            elif key in (ord("l"), ord("L")):
+                if not locked and display_pos is not None:
+                    locked = True
+                    locked_pos = display_pos
+                    lost_since_ms = None
+            elif key in (ord("u"), ord("U")):
+                locked = False
+                locked_pos = None
+                lost_since_ms = None
     finally:
         detector.close()
         cap.release()

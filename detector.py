@@ -10,6 +10,7 @@ import numpy as np
 import config
 
 _HEAD_TOP_INDEX = 10
+_MAX_FACES = 4
 _DOWNLOAD_CHUNK = 64 * 1024
 _DOWNLOAD_TIMEOUT = 15
 
@@ -76,30 +77,49 @@ class HeadDetector:
         opts = mp.tasks.vision.FaceLandmarkerOptions(
             base_options=base_opts,
             running_mode=mp.tasks.vision.RunningMode.VIDEO,
-            num_faces=1,
+            num_faces=_MAX_FACES,
             output_face_blendshapes=False,
         )
         self._landmarker = mp.tasks.vision.FaceLandmarker.create_from_options(opts)
         self._ts_ms = 0
 
-    def detect(self, bgr_frame: np.ndarray):
+    def detect_all(self, bgr_frame: np.ndarray):
+        """Return a list of (cx, cy) head-top points for every face in frame.
+        Coordinates are in the *display* (already-flipped) frame."""
         self._ts_ms += 33
+        h, w = bgr_frame.shape[:2]
         rgb = cv2.cvtColor(bgr_frame, cv2.COLOR_BGR2RGB)
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
         result = self._landmarker.detect_for_video(mp_image, self._ts_ms)
         if not result.face_landmarks:
-            return None
+            return []
 
-        lm = result.face_landmarks[0]
-        if _HEAD_TOP_INDEX >= len(lm):
+        heads = []
+        for lm in result.face_landmarks:
+            if _HEAD_TOP_INDEX >= len(lm):
+                continue
+            cx = lm[_HEAD_TOP_INDEX].x * w
+            cy = lm[_HEAD_TOP_INDEX].y * h
+            heads.append((int(cx), int(cy)))
+        return heads
+
+    def detect(self, bgr_frame: np.ndarray):
+        """Backwards-compat: return only the largest face's head-top."""
+        heads = self.detect_all(bgr_frame)
+        if not heads:
             return None
-        h, w = bgr_frame.shape[:2]
-        cx = lm[_HEAD_TOP_INDEX].x * w
-        cy = lm[_HEAD_TOP_INDEX].y * h
-        return int(cx), int(cy)
+        return heads[0]
 
     def close(self) -> None:
         try:
             self._landmarker.close()
         except Exception:
             pass
+
+
+def pick_nearest(points, target):
+    """Return the point in `points` closest to `target` (Euclidean)."""
+    if not points:
+        return None
+    tx, ty = target
+    return min(points, key=lambda p: (p[0] - tx) ** 2 + (p[1] - ty) ** 2)
