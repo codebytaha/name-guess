@@ -9,7 +9,7 @@ import numpy as np
 
 import config
 
-_HEAD_TOP_INDICES = (10, 338, 297, 332, 284)
+_HEAD_TOP_INDEX = 10
 _DOWNLOAD_CHUNK = 64 * 1024
 _DOWNLOAD_TIMEOUT = 15
 
@@ -91,15 +91,12 @@ class HeadDetector:
             return None
 
         lm = result.face_landmarks[0]
-        h, w = bgr_frame.shape[:2]
-        xs, ys = [], []
-        for i in _HEAD_TOP_INDICES:
-            if i < len(lm):
-                xs.append(lm[i].x * w)
-                ys.append(lm[i].y * h)
-        if not xs:
+        if _HEAD_TOP_INDEX >= len(lm):
             return None
-        return int(sum(xs) / len(xs)), int(sum(ys) / len(ys))
+        h, w = bgr_frame.shape[:2]
+        cx = lm[_HEAD_TOP_INDEX].x * w
+        cy = lm[_HEAD_TOP_INDEX].y * h
+        return int(cx), int(cy)
 
     def close(self) -> None:
         try:

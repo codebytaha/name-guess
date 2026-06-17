@@ -12,7 +12,7 @@ LETTER = {
     "font": "HERSHEY_DUPLEX",
     "scale": 4.0,
     "thickness": 10,
-    "offset_above_head_px": 60,
+    "offset_above_head_px": 110,
     "smoothing": 0.6,
 }
 
